@@ -4,13 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>mhtml - TodoMVC</title>
-    <link rel="stylesheet" href="node_modules/todomvc-common/base.css"/>
-    <link rel="stylesheet" href="node_modules/todomvc-app-css/index.css"/>
+    <link rel="stylesheet" href="./target/scala-2.12/scalajs-bundler/main/node_modules/todomvc-common/base.css"/>
 </head>
 <body>
-  <script type="text/javascript" src="node_modules/todomvc-common/base.js"></script>
-  <script type="text/javascript" src="./target/scala-2.11/mhtml-todo-fastopt.js"></script>
   <div id="application-container"></div>
-  <script type="text/javascript"> mhtml.todo.MhtmlTodo().main(); </script>
+  <script type="application/javascript" src="./target/scala-2.12/scalajs-bundler/main/mhtml-todo-fastopt-bundle.js"></script>
   </body>
 </html>
