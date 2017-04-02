@@ -11,4 +11,4 @@ libraryDependencies += "com.lihaoyi" %%% "upickle" % "0.4.4"
 
 requiresDOM in Test := true
 webpackConfigFile in fastOptJS := Some(baseDirectory.value / "dev.webpack.config.js")
-npmDependencies in Compile += "todomvc-common" -> "1.0.3"
+npmDependencies in Compile += "todomvc-app-css" -> "2.1.0"
