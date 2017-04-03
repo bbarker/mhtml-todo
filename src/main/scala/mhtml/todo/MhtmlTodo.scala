@@ -5,6 +5,8 @@ import scala.scalajs.js.JSApp
 import scala.xml.Elem
 import scala.xml.Node
 import scala.collection.breakOut
+import cats._
+import cats.data._
 import cats.implicits._
 
 import mhtml._
@@ -131,7 +133,7 @@ object MhtmlTodo extends JSApp {
   def save(todos: Seq[Todo]): Unit =
     LocalStorage(LocalStorageName) = write(todos)
   val allTodos: Var[Seq[Todo]] = ((
-    Rx[Seq[Todo]](load()) |@| header.model
+    Var[Seq[Todo]](load()) |@| header.model
   ) map {
     case (stored: Seq[Todo], newTodoMaybe: Option[Todo]) =>
       (stored ++ newTodoMaybe)
@@ -159,22 +161,16 @@ object MhtmlTodo extends JSApp {
   val todoListComponents: Rx[Seq[Component[Option[Todo]]]] = currentTodoList.flatMap { current =>
     current.items.map(_.map(todoListItem))
   }
-  //TODO: somehow get this to work with Seq instead of List to avoid conversion:
+  // Note: Cats Traverse can't support Seq, so we use List
   val (todoListElems: Rx[List[Node]], todoListRemovals: Rx[List[Todo]]) = todoListComponents.map{tlcSeq =>
-//    val elems: List[Rx[Node]] = tlcSeq.map(tlc => tlc.split).map(x => x._1).toList.sequence
-//    val data: List[Rx[Node]] = tlcSeq.map(tlc => tlc.split).map(x => x._2).toList.sequence
-
-    //val asf: Seq[Component[Option[Todo]]] = tlcSeq
     val unzippedComponents: (List[Rx[Node]], List[Rx[Option[Todo]]]) =
       tlcSeq.toList.map(tlc => (tlc.view, tlc.model)).unzip
     (unzippedComponents._1.sequence, unzippedComponents._2.sequence)
   }
-  todoListRemovals.map{rmList =>
-    allTodos.update{curTodos =>
-      curTodos.remove(rmList.toSeq)
-      curTodos
-    }//curTodos.remove(rmList.toSeq)}
 
+  //Now we complete the cycle and update the todoList
+  todoListRemovals.map{rmList =>
+    allTodos.update{curTodos => curTodos.filter(todo => !rmList.contains(todo))}
   }
 
 
@@ -245,7 +241,7 @@ object MhtmlTodo extends JSApp {
   }
 
   def todoListsFooter(todoList: TodoList) = {
-    val css = currentTodoList.map(x => if (x === todoList) "selected" else "")
+    val css = currentTodoList.map(x => if (x == todoList) "selected" else "")
     <li>
       <a href={ todoList.hash } class={css}>{ todoList.text }</a>
     </li>
@@ -275,7 +271,8 @@ object MhtmlTodo extends JSApp {
         <p>Double-click to edit a todo</p>
         <p>
           Originally written by <a href="https://github.com/atry">Yang Bo</a>,
-          adapted to monadic-html by <a href="https://github.com/olafurpg">Olafur Pall Geirsson</a>.
+          adapted to monadic-html by <a href="https://github.com/olafurpg">Olafur Pall Geirsson</a>,
+          rewritten to use Components by <a href="https://github.com/bbarker">Brandon Elam Barker</a>.
         </p>
         <p>Part of <a href="http://todomvc.com">TodoMVC</a></p>
       </footer>
