@@ -7,6 +7,7 @@ lazy val mhtmlV = "0.3.0"
 
 //libraryDependencies += "in.nvilla" %%% "monadic-rx-cats" % mhtmlV
 libraryDependencies += "in.nvilla" %%% "monadic-html" % mhtmlV
+libraryDependencies += "in.nvilla" %%% "monadic-rx-cats" % mhtmlV
 libraryDependencies += "com.lihaoyi" %%% "upickle" % "0.4.4"
 
 requiresDOM in Test := true
