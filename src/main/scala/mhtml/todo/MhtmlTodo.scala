@@ -22,7 +22,7 @@ import upickle.default.write
 
 object MhtmlTodo extends JSApp {
 
-  case class Component[D](view: Rx[Node], model: Rx[D])
+  case class Component[D](view: Node, model: Rx[D])
 
   class Todo(val title: String, val completed: Boolean)
   object Todo {
@@ -58,7 +58,7 @@ object MhtmlTodo extends JSApp {
                placeholder="What needs to be done?"
                onkeydown={onInputKeydown}/>
       </header>
-    Component(Rx(headerNode), newTodo)
+    Component(headerNode, newTodo)
   }
 
   def todoListItem(todo: Todo): Component[Option[Todo]] = {
@@ -123,7 +123,7 @@ object MhtmlTodo extends JSApp {
                value={todo.title}
                onblur={blurHandler}/>
       </li>
-    Component(Rx(todoListElem), removeTodo)
+    Component(todoListElem, removeTodo)
   }
 
 //  object Model {
@@ -132,49 +132,45 @@ object MhtmlTodo extends JSApp {
     LocalStorage(LocalStorageName).toSeq.flatMap(read[Seq[Todo]])
   def save(todos: Seq[Todo]): Unit =
     LocalStorage(LocalStorageName) = write(todos)
-  val allTodos: Var[Seq[Todo]] = ((
-    Var[Seq[Todo]](load()) |@| header.model
-  ) map {
-    case (stored: Seq[Todo], newTodoMaybe: Option[Todo]) =>
-      (stored ++ newTodoMaybe)
-  }).asVar //FIXME: asVar
-
-  val autoSave: Unit = allTodos.foreach(save)
-  val editingTodo: Var[Option[Todo]] = Var[Option[Todo]](None)
-  val all = TodoList("All", "#/", allTodos)
-  val active =
-    TodoList("Active", "#/active", allTodos.map(_.filter(!_.completed)))
-  val completed =
-    TodoList("Completed", "#/completed", allTodos.map(_.filter(_.completed)))
-  val todoLists = Seq(all, active, completed)
-
-  val windowHash: Rx[String] = Rx(dom.window.location.hash).merge{
+  lazy val windowHash: Rx[String] = Rx(dom.window.location.hash).merge{
     var updatedHash = Var(dom.window.location.hash)
     dom.window.onhashchange({ _ =>
       updatedHash := dom.window.location.hash
     })
     updatedHash
   }
-  val currentTodoList: Rx[TodoList] = windowHash.map(hash =>
+  lazy val autoSave: Unit = allTodos.foreach(save)
+  lazy val editingTodo: Var[Option[Todo]] = Var[Option[Todo]](None)
+  lazy val all = TodoList("All", "#/", allTodos)
+  lazy val active =
+    TodoList("Active", "#/active", allTodos.map(_.filter(!_.completed)))
+  lazy val completed =
+    TodoList("Completed", "#/completed", allTodos.map(_.filter(_.completed)))
+  lazy val todoLists = Seq(all, active, completed)
+
+
+  lazy val currentTodoList: Rx[TodoList] = windowHash.map(hash =>
     todoLists.find(_.hash === hash).getOrElse(all)
   )
-  val todoListComponents: Rx[Seq[Component[Option[Todo]]]] = currentTodoList.flatMap { current =>
-    current.items.map(_.map(todoListItem))
-  }
+  lazy val todoListComponents: Rx[Seq[Component[Option[Todo]]]] =
+    currentTodoList.flatMap { current =>
+      current.items.map(_.map(todoListItem))
+    }
+
   // Note: Cats Traverse can't support Seq, so we use List
-  val (todoListElems: Rx[List[Node]], todoListRemovals: Rx[List[Todo]]) = todoListComponents.map{tlcSeq =>
-    val unzippedComponents: (List[Rx[Node]], List[Rx[Option[Todo]]]) =
-      tlcSeq.toList.map(tlc => (tlc.view, tlc.model)).unzip
-    (unzippedComponents._1.sequence, unzippedComponents._2.sequence)
+  lazy val (todoListElems: List[Node], todoListRemovals: Rx[List[Todo]]) =
+    todoListComponents.map{tlcSeq =>
+      lazy val unzippedComponents: (List[Node], List[Rx[Option[Todo]]]) =
+        tlcSeq.toList.map(tlc => (tlc.view, tlc.model)).unzip
+      (unzippedComponents._1.sequence, unzippedComponents._2.sequence)
+    }
+
+  lazy val allTodos: Rx[Seq[Todo]] = (
+    Rx(load()) |@| header.model |@| todoListRemovals
+  ) map {
+    case (stored: Seq[Todo], newTodoMaybe: Option[Todo], removals: List[Todo]) =>
+      (stored ++ newTodoMaybe).filter(todo => !removals.contains(todo))
   }
-
-  //Now we complete the cycle and update the todoList
-  todoListRemovals.map{rmList =>
-    allTodos.update{curTodos => curTodos.filter(todo => !rmList.contains(todo))}
-  }
-
-
-
 
 
 //  }
