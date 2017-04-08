@@ -61,6 +61,28 @@ object MhtmlTodo extends JSApp {
     Component(headerNode, newTodo)
   }
 
+  def footer: Component[List[Todo]] = {
+    val removeTodos = Var[List[Todo]](Nil)
+    val display = allTodos.map(x => if (x.isEmpty) "none" else "")
+    val visibility =
+      completed.items.map(x => if (x.isEmpty) "hidden" else "visible")
+    val footerNode =
+      <footer class="footer" style:display={display}>
+        <ul class="filters">{todoLists.map(todoListsFooter)}</ul>
+        <button onclick={() =>
+            allTodos.map(_.filter(_.completed).foreach(todo =>
+              removeTodos.update(rtList => todo :: rtList)
+            ))
+            ()
+          }
+          class="clear-completed"
+          style:visibility={visibility}>
+          Clear completed
+        </button>
+      </footer>
+    Component(footerNode, removeTodos)
+  }
+
   case class TodoUpdate(oldTodo: Todo, newTodo: Todo)
   case class TodoListItemData(removal: Option[Todo], update: Option[TodoUpdate])
   //
@@ -149,16 +171,18 @@ object MhtmlTodo extends JSApp {
     // TODO(olafur) This is broken in 0.1, fix here https://github.com/OlivierBlanvillain/monadic-html/pull/9
     val checked = active.items.map(x => conditionalAttribute(x.isEmpty))
     val display = allTodos.map(todos => if (todos.isEmpty) "none" else "")
+    def setAllCompletedHandler: (Event) => Unit = { event: Event =>
+      event.currentTarget match {
+        case input: HTMLInputElement =>
+          allTodos.map(todos => setAllCompleted(todos, input.checked))
+            .map(todos => todoUpdates := todos)
+          ()
+        case _ => ()
+      }
+    }
     val mainDiv =
       <section class="main" style:display={display}>
-        <input onclick={ event: Event =>
-            event.currentTarget match {
-              case input: HTMLInputElement =>
-                allTodos.map(todos => setAllCompleted(todos, input.checked))
-                  .map(todos => todoUpdates := todos) //FIXME: this is probably a memory leak
-              case _ => ()
-            }
-          }
+        <input onclick={setAllCompletedHandler}
           type="checkbox"
           class="toggle-all"
           checked={checked} />
@@ -181,7 +205,7 @@ object MhtmlTodo extends JSApp {
     })
     updatedHash
   }
-  lazy val autoSave: Unit = allTodos.foreach(save)
+  //lazy val autoSave: Unit = allTodos.foreach(save)
   lazy val editingTodo: Var[Option[Todo]] = Var[Option[Todo]](None)
   lazy val all = TodoList("All", "#/", allTodos)
   lazy val active =
@@ -220,6 +244,7 @@ object MhtmlTodo extends JSApp {
         case None => todo
       }}
   }
+  lazy val autoSave: Unit = allTodos.map(save)
 
 
 //  }
@@ -262,26 +287,9 @@ object MhtmlTodo extends JSApp {
     </li>
   }
 
-  def footer: Node = {
-    def onClearCompleted = { _: Event =>
-      allTodos.update(_.filterNot(_.completed))
-    }
-    val display = allTodos.map(x => if (x.isEmpty) "none" else "")
-    val visibility =
-      completed.items.map(x => if (x.isEmpty) "hidden" else "visible")
-    <footer class="footer" style:display={display}>
-      <ul class="filters">{todoLists.map(todoListsFooter)}</ul>
-      <button onclick={onClearCompleted}
-              class="clear-completed"
-              style:visibility={visibility}>
-        Clear completed
-      </button>
-    </footer>
-  }
-
   lazy val todoapp: Node = {
     <div>
-      <section class="todoapp">{header.view}{mainSection}{footer}</section>
+      <section class="todoapp">{header.view}{mainSection.view}{footer.view}</section>
       <footer class="info">
         <p>Double-click to edit a todo</p>
         <p>
