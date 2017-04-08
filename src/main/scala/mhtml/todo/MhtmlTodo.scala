@@ -8,12 +8,10 @@ import scala.collection.breakOut
 import cats._
 import cats.data._
 import cats.implicits._
-
 import mhtml._
 import mhtml.implicits.cats._
 import org.scalajs.dom
-import org.scalajs.dom.Event
-import org.scalajs.dom.KeyboardEvent
+import org.scalajs.dom.{Event, HashChangeEvent, KeyboardEvent}
 import org.scalajs.dom.ext.KeyCode
 import org.scalajs.dom.ext.LocalStorage
 import org.scalajs.dom.raw.HTMLInputElement
@@ -200,9 +198,9 @@ object MhtmlTodo extends JSApp {
     LocalStorage(LocalStorageName) = write(todos)
   lazy val windowHash: Rx[String] = Rx(dom.window.location.hash).merge{
     var updatedHash = Var(dom.window.location.hash)
-    dom.window.onhashchange({ _ =>
+    dom.window.onhashchange = (ev: HashChangeEvent) => {
       updatedHash := dom.window.location.hash
-    })
+    }
     updatedHash
   }
   //lazy val autoSave: Unit = allTodos.foreach(save)
