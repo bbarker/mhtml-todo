@@ -61,8 +61,12 @@ object MhtmlTodo extends JSApp {
     Component(headerNode, newTodo)
   }
 
-  def todoListItem(todo: Todo): Component[Option[Todo]] = {
+  case class TodoUpdate(oldTodo: Todo, newTodo: Todo)
+  case class TodoListItemData(removal: Option[Todo], update: Option[TodoUpdate])
+  //
+  def todoListItem(todo: Todo): Component[TodoListItemData] = {
     val removeTodo = Var[Option[Todo]](None)
+    val updateTodo = Var[Option[TodoUpdate]](None)
     val suppressOnBlur = Var(false)
     def submit: Event => Unit = { event: Event =>
       suppressOnBlur := true
@@ -71,7 +75,7 @@ object MhtmlTodo extends JSApp {
         case "" =>
           removeTodo := Some(todo)
         case trimmedTitle =>
-          updateTodo(todo, Todo(trimmedTitle, todo.completed))
+          updateTodo := Some(TodoUpdate(todo, Todo(trimmedTitle, todo.completed)))
       }
     }
     def onEditTodoTitle = { event: KeyboardEvent =>
@@ -91,7 +95,7 @@ object MhtmlTodo extends JSApp {
     def onToggleCompleted: (Event) => Unit = { event: Event =>
       event.currentTarget match {
         case input: HTMLInputElement =>
-          updateTodo(todo, Todo(todo.title, input.checked))
+          updateTodo := Some(TodoUpdate(todo, Todo(todo.title, input.checked)))
         case _ =>
       }
     }
@@ -107,6 +111,10 @@ object MhtmlTodo extends JSApp {
       val completed = if (todo.completed) "completed" else ""
       s"$editing $completed"
     }
+    val data = removeTodo.map{
+      rmTodo => TodoListItemData(rmTodo, None)
+    }
+
     val todoListElem =
       <li class={css}>
         <div class="view">
@@ -123,7 +131,41 @@ object MhtmlTodo extends JSApp {
                value={todo.title}
                onblur={blurHandler}/>
       </li>
-    Component(todoListElem, removeTodo)
+    Component(todoListElem, data)
+  }
+
+
+  def mainSection: Component[List[TodoUpdate]] = {
+
+    val todoUpdates = Var[List[TodoUpdate]](Nil)
+
+    def setAllCompleted(todosIn: Seq[Todo], completed: Boolean): List[TodoUpdate] =
+      todosIn.flatMap{
+        case todo if todo.completed != completed =>
+          Some(TodoUpdate(todo, Todo(todo.title, completed)))
+        case _ => None
+      }(breakOut)
+
+    // TODO(olafur) This is broken in 0.1, fix here https://github.com/OlivierBlanvillain/monadic-html/pull/9
+    val checked = active.items.map(x => conditionalAttribute(x.isEmpty))
+    val display = allTodos.map(todos => if (todos.isEmpty) "none" else "")
+    val mainDiv =
+      <section class="main" style:display={display}>
+        <input onclick={ event: Event =>
+            event.currentTarget match {
+              case input: HTMLInputElement =>
+                allTodos.map(todos => setAllCompleted(todos, input.checked))
+                  .map(todos => todoUpdates := todos) //FIXME: this is probably a memory leak
+              case _ => ()
+            }
+          }
+          type="checkbox"
+          class="toggle-all"
+          checked={checked} />
+        <label for="toggle-all" checked={checked}>Mark all as complete</label>
+        <ul class="todo-list">{todoListElems}</ul>
+      </section>
+    Component(mainDiv, todoUpdates)
   }
 
 //  object Model {
@@ -152,24 +194,31 @@ object MhtmlTodo extends JSApp {
   lazy val currentTodoList: Rx[TodoList] = windowHash.map(hash =>
     todoLists.find(_.hash === hash).getOrElse(all)
   )
-  lazy val todoListComponents: Rx[Seq[Component[Option[Todo]]]] =
+  lazy val todoListComponents: Rx[Seq[Component[TodoListItemData]]] =
     currentTodoList.flatMap { current =>
       current.items.map(_.map(todoListItem))
     }
 
   // Note: Cats Traverse can't support Seq, so we use List
-  lazy val (todoListElems: List[Node], todoListRemovals: Rx[List[Todo]]) =
+  lazy val (todoListElems: List[Node], todoListDataChanges: Rx[List[TodoListItemData]]) =
     todoListComponents.map{tlcSeq =>
-      lazy val unzippedComponents: (List[Node], List[Rx[Option[Todo]]]) =
+      lazy val unzippedComponents: (List[Node], List[Rx[TodoListItemData]]) =
         tlcSeq.toList.map(tlc => (tlc.view, tlc.model)).unzip
       (unzippedComponents._1.sequence, unzippedComponents._2.sequence)
     }
 
   lazy val allTodos: Rx[Seq[Todo]] = (
-    Rx(load()) |@| header.model |@| todoListRemovals
+    Rx(load()) |@| header.model |@| todoListDataChanges
   ) map {
-    case (stored: Seq[Todo], newTodoMaybe: Option[Todo], removals: List[Todo]) =>
-      (stored ++ newTodoMaybe).filter(todo => !removals.contains(todo))
+    case (stored: Seq[Todo], newTodoMaybe: Option[Todo], changes: List[TodoListItemData]) =>
+      val removals: List[Todo] = changes.flatMap(change => change.removal)
+      val updates: List[TodoUpdate] = changes.flatMap(change => change.update)
+
+      (stored ++ newTodoMaybe).filter(todo => !removals .contains(todo))
+      .map{todo => updates.find{update => update.oldTodo == todo} match {
+        case Some(foundUpdate) => foundUpdate.newTodo
+        case None => todo
+      }}
   }
 
 
@@ -182,14 +231,8 @@ object MhtmlTodo extends JSApp {
 //    allTodos.update(todos => Todo(title, completed = false) +: todos)
 //  def removeTodo(todo: Todo): Unit =
 //    allTodos.update(_.filterNot(_ eq todo))
-  def updateTodo(toUpdate: Todo, newTodo: Todo) =
-    allTodos.update(todos => todos.updated(todos.indexOf(toUpdate), newTodo))
-  def setAllCompleted(completed: Boolean) =
-    allTodos.update(_.map {
-      case t if t.completed != completed =>
-        Todo(t.title, completed)
-      case t => t
-    })
+//  def updateTodo(toUpdate: Todo, newTodo: Todo) =
+//    allTodos.update(todos => todos.updated(todos.indexOf(toUpdate), newTodo))
   //}
 
   //object View {
@@ -204,30 +247,6 @@ object MhtmlTodo extends JSApp {
     case _ =>
   }
 
-
-
-  def toggleAllClickHandler = { event: Event =>
-    event.currentTarget match {
-      case input: HTMLInputElement =>
-        setAllCompleted(input.checked)
-      case _ =>
-    }
-  }
-
-  def mainSection: Node = {
-
-    // TODO(olafur) This is broken in 0.1, fix here https://github.com/OlivierBlanvillain/monadic-html/pull/9
-    val checked = active.items.map(x => conditionalAttribute(x.isEmpty))
-    val display = allTodos.map(todos => if (todos.isEmpty) "none" else "")
-    <section class="main" style:display={display}>
-      <input onclick={toggleAllClickHandler}
-             type="checkbox"
-             class="toggle-all"
-             checked={checked} />
-      <label for="toggle-all" checked={checked}>Mark all as complete</label>
-      <ul class="todo-list">{todoListElems}</ul>
-    </section>
-  }
 
   val count = active.items.map { items =>
     <span class="todo-count">
