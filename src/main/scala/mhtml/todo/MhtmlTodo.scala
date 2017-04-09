@@ -222,12 +222,15 @@ object MhtmlTodo extends JSApp {
     }
 
   // Note: Cats Traverse can't support Seq, so we use List
-  lazy val (todoListElems: List[Node], todoListDataChanges: Rx[List[TodoListItemData]]) =
-    todoListComponents.map{tlcSeq =>
-      lazy val unzippedComponents: (List[Node], List[Rx[TodoListItemData]]) =
-        tlcSeq.toList.map(tlc => (tlc.view, tlc.model)).unzip
-      (unzippedComponents._1.sequence, unzippedComponents._2.sequence)
-    }
+  def unzipListComponents(listComps: Seq[Component[TodoListItemData]])
+  : (List[Node], List[Rx[TodoListItemData]])
+  = listComps.toList.map(tlc => (tlc.view, tlc.model)).unzip
+
+  lazy val todoListElems: Rx[List[Node]] =
+    todoListComponents.map{tlcSeq => unzipListComponents(tlcSeq)._1}
+
+  lazy val todoListDataChanges: Rx[List[TodoListItemData]] =
+    todoListComponents.flatMap{tlcSeq => unzipListComponents(tlcSeq)._2.sequence}
 
   lazy val allTodos: Rx[Seq[Todo]] = (
     Rx(load()) |@| header.model |@| todoListDataChanges
