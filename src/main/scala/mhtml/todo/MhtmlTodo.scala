@@ -2,8 +2,7 @@
 // https://github.com/ThoughtWorksInc/todo/blob/master/js/src/main/scala/com/thoughtworks/todo/Main.scala
 package mhtml.todo
 import scala.scalajs.js.JSApp
-import scala.xml.Elem
-import scala.xml.Node
+import scala.xml.{Elem, Node, Null, UnprefixedAttribute}
 import scala.collection.breakOut
 import cats._
 import cats.data._
@@ -196,7 +195,7 @@ object MhtmlTodo extends JSApp {
     LocalStorage(LocalStorageName).toSeq.flatMap(read[Seq[Todo]])
   def save(todos: Seq[Todo]): Unit =
     LocalStorage(LocalStorageName) = write(todos)
-  lazy val windowHash: Rx[String] = Rx(dom.window.location.hash).merge{
+  val windowHash: Rx[String] = Rx(dom.window.location.hash).merge{
     var updatedHash = Var(dom.window.location.hash)
     dom.window.onhashchange = (ev: HashChangeEvent) => {
       updatedHash := dom.window.location.hash
@@ -204,19 +203,19 @@ object MhtmlTodo extends JSApp {
     updatedHash
   }
   //lazy val autoSave: Unit = allTodos.foreach(save)
-  lazy val editingTodo: Var[Option[Todo]] = Var[Option[Todo]](None)
-  lazy val all = TodoList("All", "#/", allTodos)
-  lazy val active =
+  val editingTodo: Var[Option[Todo]] = Var[Option[Todo]](None)
+  val all = TodoList("All", "#/", allTodos)
+  val active =
     TodoList("Active", "#/active", allTodos.map(_.filter(!_.completed)))
-  lazy val completed =
+  val completed =
     TodoList("Completed", "#/completed", allTodos.map(_.filter(_.completed)))
-  lazy val todoLists = Seq(all, active, completed)
+  val todoLists = Seq(all, active, completed)
 
 
-  lazy val currentTodoList: Rx[TodoList] = windowHash.map(hash =>
+  val currentTodoList: Rx[TodoList] = windowHash.map(hash =>
     todoLists.find(_.hash === hash).getOrElse(all)
   )
-  lazy val todoListComponents: Rx[Seq[Component[TodoListItemData]]] =
+  val todoListComponents: Rx[Seq[Component[TodoListItemData]]] =
     currentTodoList.flatMap { current =>
       current.items.map(_.map(todoListItem))
     }
@@ -226,27 +225,53 @@ object MhtmlTodo extends JSApp {
   : (List[Node], List[Rx[TodoListItemData]])
   = listComps.toList.map(tlc => (tlc.view, tlc.model)).unzip
 
-  lazy val todoListElems: Rx[List[Node]] =
+  val todoListElems: Rx[List[Node]] =
     todoListComponents.map{tlcSeq => unzipListComponents(tlcSeq)._1}
 
-  lazy val todoListDataChanges: Rx[List[TodoListItemData]] =
+  val todoListDataChanges: Rx[List[TodoListItemData]] =
     todoListComponents.flatMap{tlcSeq => unzipListComponents(tlcSeq)._2.sequence}
 
-  lazy val allTodos: Rx[Seq[Todo]] = (
-    Rx(load()) |@| header.model |@| todoListDataChanges
-  ) map {
-    case (stored: Seq[Todo], newTodoMaybe: Option[Todo], changes: List[TodoListItemData]) =>
-      val removals: List[Todo] = changes.flatMap(change => change.removal)
-      val updates: List[TodoUpdate] = changes.flatMap(change => change.update)
+//  lazy val allTodos: Rx[Seq[Todo]] = (
+//    Rx(load()) |@| header.model |@| todoListDataChanges
+//  ) map {
+//    case (stored: Seq[Todo], newTodoMaybe: Option[Todo], changes: List[TodoListItemData]) =>
+//      val removals: List[Todo] = changes.flatMap(change => change.removal)
+//      val updates: List[TodoUpdate] = changes.flatMap(change => change.update)
+//
+//      (stored ++ newTodoMaybe).filter(todo => !removals .contains(todo))
+//      .map{todo => updates.find{update => update.oldTodo == todo} match {
+//        case Some(foundUpdate) => foundUpdate.newTodo
+//        case None => todo
+//      }}
+//  }
 
-      (stored ++ newTodoMaybe).filter(todo => !removals .contains(todo))
+  case class ModelSources(
+    headerModel: Option[Todo],
+    changes:  List[TodoListItemData]
+  )
+
+  def updateState(currentTodos: Seq[Todo], sources: ModelSources): Seq[Todo] = {
+    val removals: List[Todo] = sources.changes.flatMap(change => change.removal)
+    val updates: List[TodoUpdate] = sources.changes.flatMap(change => change.update)
+
+    (currentTodos ++ sources.headerModel).filter(todo => !removals .contains(todo))
       .map{todo => updates.find{update => update.oldTodo == todo} match {
         case Some(foundUpdate) => foundUpdate.newTodo
         case None => todo
       }}
   }
-  lazy val autoSave: Unit = allTodos.map(save)
 
+  val sourcesWrapped: Rx[ModelSources] = header.model |@| todoListDataChanges map {
+    case(newTodoMaybe: Option[Todo], changes: List[TodoListItemData]) =>
+      ModelSources(newTodoMaybe, changes)
+  }
+
+  lazy val allTodos: Rx[Seq[Todo]] = sourcesWrapped.flatMap(mSources =>
+    allTodos.foldp(load()){(last, next) => updateState(last ++ next, mSources)}
+  )
+
+
+  val autoSave: Unit = allTodos.map(save)
 
 //  }
 
