@@ -1,6 +1,7 @@
 // This implementation is mostly copied from Binding.scala TodoMVC example:
 // https://github.com/ThoughtWorksInc/todo/blob/master/js/src/main/scala/com/thoughtworks/todo/Main.scala
 package mhtml.todo
+
 import scala.scalajs.js.JSApp
 import scala.xml.{Elem, Node, Null, UnprefixedAttribute}
 import scala.collection.breakOut
@@ -16,6 +17,8 @@ import org.scalajs.dom.ext.LocalStorage
 import org.scalajs.dom.raw.HTMLInputElement
 import upickle.default.read
 import upickle.default.write
+
+import scala.scalajs.runtime.UndefinedBehaviorError
 
 object MhtmlTodo extends JSApp {
 
@@ -264,6 +267,9 @@ object MhtmlTodo extends JSApp {
   val sourcesWrapped: Rx[ModelSources] = header.model |@| todoListDataChanges map {
     case(newTodoMaybe: Option[Todo], changes: List[TodoListItemData]) =>
       ModelSources(newTodoMaybe, changes)
+    case whatsit  =>
+      println("mismatch: " + whatsit.getClass.getName)
+      throw new UndefinedBehaviorError("Expected (Option[Todo], List[TodoListItemData])")
   }
 
   lazy val allTodos: Rx[Seq[Todo]] = sourcesWrapped.flatMap(mSources =>
